@@ -5,6 +5,7 @@ import { inferModelInfo } from "../model-inference";
 import { getModelLogoById } from "../model-logo";
 import { fetchProApiTokenUsage, proApiRootUrl, summarizeModelCategories } from "../proapi-usage";
 import { mergeSuggestedModelOptions, modelOptionLabel, modelOptionSearchText, modelOptionsFromChannels, normalizeModelOptionValue, resolveModelRequestConfig, type AiConfig } from "../../../stores/use-config-store";
+import { clampImageSize } from "../../../services/api/image";
 
 describe("pro-spec inference", () => {
     test("infers OpenAI chat model", () => {
@@ -320,5 +321,48 @@ describe("model channel routing", () => {
         const suggested = ["high::gpt-image-2", "medium::gpt-image-2", "medium::agnes-image-2.1-flash"];
 
         expect(mergeSuggestedModelOptions(current, suggested)).toEqual(["high::gpt-image-2", "high::imagen-4", "medium::gpt-image-2", "medium::agnes-image-2.1-flash"]);
+    });
+});
+
+describe("clampImageSize", () => {
+    const STEP = 16;
+    const MIN = 655360;
+    const MAX = 8294400;
+    const EDGE = 3840;
+    const RATIO = 3;
+    const assertValid = (w: number, h: number) => {
+        expect(Number.isInteger(w) && Number.isInteger(h)).toBe(true);
+        expect(w % STEP === 0 && h % STEP === 0).toBe(true);
+        expect(Math.max(w, h)).toBeLessThanOrEqual(EDGE);
+        expect(Math.max(w, h) / Math.min(w, h)).toBeLessThanOrEqual(RATIO);
+        expect(w * h).toBeGreaterThanOrEqual(MIN);
+        expect(w * h).toBeLessThanOrEqual(MAX);
+    };
+
+    test("projects out-of-range sizes onto the valid set", () => {
+        for (const [w, h] of [[800, 800], [5000, 5000], [5000, 1024], [3000, 500], [1, 1], [9999, 1]]) {
+            const r = clampImageSize(w, h);
+            assertValid(r.width, r.height);
+            expect(r.clamped).toBe(true);
+        }
+    });
+
+    test("leaves valid sizes unchanged and unflagged", () => {
+        for (const [w, h] of [[1024, 1024], [1536, 1024], [3840, 1280]]) {
+            const r = clampImageSize(w, h);
+            expect(r.width).toBe(w);
+            expect(r.height).toBe(h);
+            expect(r.clamped).toBe(false);
+        }
+    });
+
+    test("is idempotent", () => {
+        for (const [w, h] of [[800, 800], [5000, 5000], [3000, 500]]) {
+            const first = clampImageSize(w, h);
+            const second = clampImageSize(first.width, first.height);
+            expect(second.width).toBe(first.width);
+            expect(second.height).toBe(first.height);
+            expect(second.clamped).toBe(false);
+        }
     });
 });
