@@ -141,11 +141,11 @@ export function buildDalleEndpointBody(opts: BuildBodyOpts): Record<string, any>
     case 'gpt-image': {
       // gpt-image-2：
       //   size(auto + WxH，16 倍数 / 0.65M-8.3M 像素), quality(auto|low|medium|high),
-      //   aspect_ratio（ProAPI 中转扩展字段）, background, output_format(png|jpeg|webp),
-      //   output_compression（仅 jpeg/webp）, moderation(auto|low), input_fidelity(low|high)
+      //   background, output_format(png|jpeg|webp), output_compression（仅 jpeg/webp）, moderation(auto|low), input_fidelity(low|high)
+      // 像素级 size 已完整表达比例；仅在没有 size 时保留 ProAPI aspect_ratio 扩展兜底，避免编辑端点重复处理比例后裁剪画面。
       if (p.size) body.size = normalizeSize(p.size)
       if (p.quality) body.quality = p.quality
-      if (p.aspectRatio) body.aspect_ratio = p.aspectRatio
+      if (!p.size && p.aspectRatio) body.aspect_ratio = p.aspectRatio
       if (p.background && p.background !== 'auto') body.background = p.background
       if (p.outputFormat) body.output_format = p.outputFormat
       if (

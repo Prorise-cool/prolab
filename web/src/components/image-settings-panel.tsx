@@ -26,6 +26,8 @@ const aspectOptions = [
     { value: "3:4", label: "3:4", width: 1024, height: 1360, icon: "portrait" },
     { value: "16:9", label: "16:9", width: 1824, height: 1024, icon: "landscape" },
     { value: "9:16", label: "9:16", width: 1024, height: 1824, icon: "portrait" },
+    { value: "21:9", label: "21:9", width: 1552, height: 672, icon: "landscape" },
+    { value: "9:21", label: "9:21", width: 672, height: 1552, icon: "portrait" },
     { value: "auto", label: "auto", width: 0, height: 0, icon: "auto" },
 ];
 
