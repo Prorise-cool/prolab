@@ -112,12 +112,13 @@ function ImageSettingsPortal({
         <div
             ref={panelRef}
             className="canvas-image-settings-popover"
+            data-canvas-no-zoom
             style={style}
             onPointerDown={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
+            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} showTitle={false} className="space-y-4" />
         </div>,
         document.body,
     );
