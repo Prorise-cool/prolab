@@ -63,7 +63,7 @@ export function InfiniteCanvas({ containerRef, viewport, backgroundMode = "lines
 
     const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom],.canvas-node-prompt-panel,.canvas-image-settings-popover,textarea,[contenteditable='true'],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
+        if (target?.closest("[data-canvas-no-zoom],.canvas-image-settings-popover,textarea,[contenteditable='true'],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
 
         const delta = -event.deltaY;
         const factor = Math.pow(1.1, delta / 100);
@@ -162,7 +162,7 @@ export function InfiniteCanvas({ containerRef, viewport, backgroundMode = "lines
 
         const preventWheelScroll = (event: WheelEvent) => {
             const target = event.target instanceof Element ? event.target : null;
-            if (target?.closest("[data-canvas-no-zoom],.canvas-node-prompt-panel,.canvas-image-settings-popover,textarea,[contenteditable='true']")) return;
+            if (target?.closest("[data-canvas-no-zoom],textarea,[contenteditable='true']")) return;
             event.preventDefault();
         };
         container.addEventListener("wheel", preventWheelScroll, { passive: false });

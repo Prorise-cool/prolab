@@ -57,7 +57,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     return (
         <div
             data-canvas-no-zoom
-            className="canvas-node-prompt-panel rounded-2xl border p-3 shadow-2xl backdrop-blur"
+            className="rounded-2xl border p-3 shadow-2xl backdrop-blur"
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
@@ -84,7 +84,6 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                                 placement="topLeft"
                                 buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3"
                                 onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })}
-                                onMissingConfig={() => openConfigDialog(true)}
                                 onOpenChange={onImageSettingsOpenChange}
                             />
                         </>
