@@ -1,10 +1,12 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ChevronUp, ClipboardPaste, Download, FolderPlus, History, ImagePlus, PenLine, Pin, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
 import { saveAs } from "file-saver";
 
-import { ImageSettingsPanel } from "@/components/image-settings-panel";
+import { ImageSettingsPanel, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
+import { useImageWorkbenchDock } from "@/pages/image/use-image-workbench-dock";
+import { detectModelFamily } from "@/lib/pro-spec/image-body-builder";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
@@ -18,6 +20,7 @@ import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { ReferenceImage } from "@/types/image";
+import { ThinkingOrb } from "thinking-orbs";
 
 type GeneratedImage = {
     id: string;
@@ -57,9 +60,7 @@ type GenerationLog = {
     thumbnails: string[];
 };
 
-type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "size" | "count">;
-
-type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
+type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "resolution" | "size" | "count">;
 
 const LOG_STORE_KEY = "prolab:image_generation_logs";
 const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate";
@@ -80,7 +81,6 @@ export default function ImagePage() {
     const [logs, setLogs] = useState<GenerationLog[]>([]);
     const [running, setRunning] = useState(false);
     const [logsOpen, setLogsOpen] = useState(false);
-    const [settingsOpen, setSettingsOpen] = useState(false);
     const [promptDialogOpen, setPromptDialogOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [startedAt, setStartedAt] = useState(0);
@@ -90,8 +90,12 @@ export default function ImagePage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
+    const qualityDisabled = detectModelFamily(modelOptionName(model)) === "nano-banana";
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const workbench = useImageWorkbenchDock();
     const canGenerate = Boolean(prompt.trim());
     const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
+    const displayResults = previewLog ? previewLog.images.map((image) => ({ id: image.id, status: "success" as const, image })) : results;
 
     useEffect(() => {
         if (!running || !startedAt) return;
@@ -156,6 +160,7 @@ export default function ImagePage() {
         setResults(Array.from({ length: generationCount }, () => ({ id: nanoid(), status: "pending" })));
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
+        workbench.collapseAfterGenerate();
 
         const tasks = Array.from({ length: generationCount }, (_, index) => runGenerationSlot(index, snapshot));
 
@@ -261,9 +266,9 @@ export default function ImagePage() {
         setReferences(log.references || []);
         if (log.config.imageModel || log.model) updateConfig("imageModel", log.config.imageModel || log.model);
         if (log.config.quality) updateConfig("quality", log.config.quality);
+        if (log.config.resolution) updateConfig("resolution", log.config.resolution);
         if (log.config.size) updateConfig("size", log.config.size);
         if (log.config.count) updateConfig("count", log.config.count);
-        setResults(log.images.map((image) => ({ id: image.id, status: "success", image })));
     };
 
     const buildRequestSnapshot = () => {
@@ -328,41 +333,93 @@ export default function ImagePage() {
 
     return (
         <div className="flex h-full flex-col overflow-hidden bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100">
-            <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)]">
-                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:block">
-                    <LogPanel
-                        logs={logs}
-                        selectedLogIds={selectedLogIds}
-                        activeLogId={previewLog?.id}
-                        onSelectedLogIdsChange={setSelectedLogIds}
-                        onCreateSession={createSession}
-                        onDeleteSelected={() => setDeleteConfirmOpen(true)}
-                        onPreviewLog={(log) => void previewGenerationLog(log)}
-                    />
-                </aside>
+            <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 lg:overflow-hidden">
+                <div className="grid min-h-0 grid-cols-1 gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-[280px_minmax(0,1fr)] lg:overflow-hidden">
+                    <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:block">
+                        <LogPanel
+                            logs={logs}
+                            selectedLogIds={selectedLogIds}
+                            activeLogId={previewLog?.id}
+                            onSelectedLogIdsChange={setSelectedLogIds}
+                            onCreateSession={createSession}
+                            onDeleteSelected={() => setDeleteConfirmOpen(true)}
+                            onPreviewLog={(log) => void previewGenerationLog(log)}
+                            running={running}
+                            runningActive={running && !previewLog}
+                            runningElapsedMs={elapsedMs}
+                            runningCount={results.length}
+                            onSelectRunning={() => setPreviewLog(null)}
+                        />
+                    </aside>
 
-                <section className="grid gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="thin-scrollbar flex flex-col rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto">
-                        <div>
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">生图工作台</h1>
-                                </div>
-                                <div className="flex shrink-0 gap-2 lg:hidden">
-                                    <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
-                                        记录
-                                    </Button>
-                                    <Button icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
-                                        参数
-                                    </Button>
-                                </div>
-                            </div>
+                    <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:flex lg:min-h-0 lg:flex-col">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <h2 className="text-xl font-semibold">生成结果</h2>
+                            {running && !previewLog ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}
                         </div>
+                        {displayResults.length ? (
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:content-start">
+                                {displayResults.map((result, index) => (
+                                    <div key={result.id} className="flex">
+                                        {result.status === "success" && result.image ? (
+                                            <ResultImageCard image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
+                                        ) : result.status === "failed" ? (
+                                            <FailedImageCard error={result.error || "生成失败"} onRetry={() => retryResult(index)} />
+                                        ) : (
+                                            <PendingImageCard />
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex min-h-[260px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-0 lg:flex-1">
+                                <ImagePlus className="mb-4 size-11 text-stone-400" />
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有生成图片" />
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-                        <div className="mt-6 space-y-5">
+                <section
+                    className="shrink-0 rounded-lg border border-stone-200 bg-card shadow-sm dark:border-stone-800"
+                    onMouseEnter={workbench.onMouseEnter}
+                    onMouseLeave={workbench.onMouseLeave}
+                    onFocusCapture={workbench.onFocusCapture}
+                    onBlurCapture={workbench.onBlurCapture}
+                >
+                    <div className="flex items-center gap-2 px-3 py-2">
+                        <WorkbenchPinButton pinned={workbench.pinned} onToggle={workbench.togglePin} />
+                        {workbench.expanded ? (
+                            <>
+                                <span className="text-sm text-stone-500 dark:text-stone-400">{workbench.pinned ? "已固定" : "生成后收起"}</span>
+                                <div className="ml-auto lg:hidden">
+                                    <Button size="small" icon={<History className="size-3.5" />} onClick={() => setLogsOpen(true)}>
+                                        生成记录
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <ChevronUp className="size-3.5 shrink-0 text-stone-400" aria-hidden />
+                                <p className="min-w-0 flex-1 truncate text-sm text-stone-600 dark:text-stone-300">{prompt.trim() || "划过展开参数，或直接再次生成"}</p>
+                                <span className="hidden shrink-0 text-xs text-stone-500 sm:inline dark:text-stone-400">
+                                    {imageQualityLabel(effectiveConfig.quality || "auto")} · {(effectiveConfig.resolution || "1k").toUpperCase()} · {imageSizeLabel(effectiveConfig.size || "auto")} · {generationCount} 张 · {modelOptionName(model) || "未选模型"}
+                                </span>
+                                <Button type="primary" size="small" icon={<Sparkles className="size-3.5" />} loading={running ? { icon: <ThinkingOrb state="solving" size={16} theme="dark" speed={0.6} /> } : false} disabled={!canGenerate || running} onClick={() => void generate()}>
+                                    {running ? "生成中" : "生成"}
+                                </Button>
+                            </>
+                        )}
+                    </div>
+
+                    <div className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${workbench.expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                    <div className={`min-h-0 overflow-hidden ${workbench.expanded ? "" : "pointer-events-none"}`} inert={!workbench.expanded || undefined}>
+                    <div className="px-3 pb-3">
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_320px_minmax(0,1fr)]">
+                        <div className="flex flex-col justify-center gap-3 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                             <div>
                                 <div className="mb-2 flex items-center justify-between gap-3">
-                                    <span className="text-base font-semibold">提示词</span>
+                                    <span className="text-sm font-semibold">提示词</span>
                                     <div className="flex gap-2">
                                         <Button size="small" icon={<BookOpen className="size-3.5" />} onClick={() => setPromptDialogOpen(true)}>
                                             查看提示词库
@@ -372,12 +429,12 @@ export default function ImagePage() {
                                         </Button>
                                     </div>
                                 </div>
-                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述画面主体、风格、构图、光线和用途" />
+                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} autoSize={{ minRows: 5, maxRows: 10 }} placeholder="描述画面主体、风格、构图、光线和用途" />
                             </div>
 
                             <div className="min-w-0">
                                 <div className="mb-2 flex items-center justify-between gap-3">
-                                    <span className="text-base font-semibold">参考图</span>
+                                    <span className="text-sm font-semibold">参考图</span>
                                     <div className="flex gap-2">
                                         <Button size="small" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
                                             剪切板
@@ -413,56 +470,27 @@ export default function ImagePage() {
                                     {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图</div> : null}
                                 </div>
                             </div>
-
-                            <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
-                                <div className="min-w-0">
-                                    <div className="truncate font-medium text-stone-700 dark:text-stone-200">{modelOptionName(model)}</div>
-                                    <div className="truncate text-xs text-stone-500 dark:text-stone-400">
-                                        {modelOptionSourceLabel(effectiveConfig, model)} · {effectiveConfig.size} · {effectiveConfig.quality}
-                                    </div>
-                                </div>
-                                <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
-                                    调整
-                                </Button>
-                            </div>
-
-                            <div className="hidden gap-4 sm:grid sm:grid-cols-2">
-                                <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
-                            </div>
                         </div>
 
-                        <div className="mt-auto pt-6">
-                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
-                                开始生成
+                        <div className="flex flex-col justify-center rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                            <ImageSettingsPanel config={effectiveConfig} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-3" maxCount={10} sections={["quality", "resolution", "size"]} qualityDisabled={qualityDisabled} />
+                        </div>
+                        <div className="flex flex-col justify-center rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                            <ImageSettingsPanel config={effectiveConfig} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-3" maxCount={10} sections={["aspect"]} />
+                        </div>
+                        <div className="flex flex-col justify-center gap-3 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                            <label className="block min-w-0">
+                                <span className="mb-2 block text-sm font-semibold">模型</span>
+                                <ModelPicker config={effectiveConfig} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
+                            </label>
+                            <ImageSettingsPanel config={effectiveConfig} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-3" maxCount={10} sections={["count"]} />
+                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running ? { icon: <ThinkingOrb state="solving" size={20} theme="dark" speed={0.6} /> } : false} disabled={!canGenerate || running} onClick={() => void generate()}>
+                                {running ? "生成中..." : "开始生成"}
                             </Button>
                         </div>
                     </div>
-
-                    <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
-                        <div className="mb-4 flex items-center justify-between gap-3">
-                            <div>
-                                <h2 className="text-xl font-semibold">生成结果</h2>
-                            </div>
-                            {running ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}
-                        </div>
-                        {results.length ? (
-                            <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-                                {results.map((result, index) =>
-                                    result.status === "success" && result.image ? (
-                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
-                                    ) : result.status === "failed" ? (
-                                        <FailedImageCard key={result.id} error={result.error || "生成失败"} onRetry={() => retryResult(index)} />
-                                    ) : (
-                                        <PendingImageCard key={result.id} />
-                                    ),
-                                )}
-                            </div>
-                        ) : (
-                            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-[560px]">
-                                <ImagePlus className="mb-4 size-11 text-stone-400" />
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有生成图片" />
-                            </div>
-                        )}
+                    </div>
+                    </div>
                     </div>
                 </section>
             </main>
@@ -486,12 +514,15 @@ export default function ImagePage() {
                     onCreateSession={createSession}
                     onDeleteSelected={() => setDeleteConfirmOpen(true)}
                     onPreviewLog={(log) => void previewGenerationLog(log)}
+                    running={running}
+                    runningActive={running && !previewLog}
+                    runningElapsedMs={elapsedMs}
+                    runningCount={results.length}
+                    onSelectRunning={() => {
+                        setPreviewLog(null);
+                        setLogsOpen(false);
+                    }}
                 />
-            </Drawer>
-            <Drawer title="参数" placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
-                <div className="grid grid-cols-2 gap-3 pb-4">
-                    <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
-                </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
             <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
@@ -502,19 +533,18 @@ export default function ImagePage() {
     );
 }
 
-function GenerationSettings({ config, model, updateConfig, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
-
+function WorkbenchPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () => void }) {
     return (
-        <>
-            <label className="col-span-2 block min-w-0 sm:col-span-1">
-                <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">模型</span>
-                <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
-            </label>
-            <div className="col-span-2">
-                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} />
-            </div>
-        </>
+        <Tooltip title={pinned ? "取消固定" : "固定工作台，生成后保持展开"}>
+            <Button
+                type={pinned ? "text" : "primary"}
+                size="small"
+                icon={<Pin className={`size-3.5 ${pinned ? "fill-current" : ""}`} />}
+                aria-pressed={pinned}
+                aria-label={pinned ? "取消固定工作台" : "固定工作台"}
+                onClick={onToggle}
+            />
+        </Tooltip>
     );
 }
 
@@ -532,9 +562,11 @@ function ResultImageCard({
     onSaveAsset: (image: GeneratedImage, index: number) => void;
 }) {
     return (
-        <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
-            <Image src={image.dataUrl} alt={`生成结果 ${index + 1}`} className="aspect-square object-cover" />
-            <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
+        <div className="flex w-full flex-col overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
+            <div className="flex h-52 items-center justify-center bg-stone-100 dark:bg-stone-900">
+                <Image src={image.dataUrl} alt={`生成结果 ${index + 1}`} rootClassName="flex h-full max-h-full w-full items-center justify-center" className="max-h-full max-w-full w-auto object-contain" />
+            </div>
+            <div className="space-y-1.5 border-t border-stone-200 px-3 py-2 dark:border-stone-800">
                 <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
                     <span>
                         {image.width}x{image.height}
@@ -566,7 +598,7 @@ function ResultImageCard({
 
 function PendingImageCard() {
     return (
-        <div className="relative aspect-square overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
+        <div className="relative flex h-[268px] w-full flex-col overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
             <div
                 className="absolute inset-0 opacity-60"
                 style={{
@@ -575,7 +607,7 @@ function PendingImageCard() {
                 }}
             />
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
-                <LoaderCircle className="size-6 animate-spin" />
+                <ThinkingOrb state="solving" size={64} theme="auto" speed={0.6} />
                 <span>生成中</span>
             </div>
         </div>
@@ -584,8 +616,8 @@ function PendingImageCard() {
 
 function FailedImageCard({ error, onRetry }: { error: string; onRetry: () => void }) {
     return (
-        <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-950 dark:bg-red-950/20">
-            <div className="flex aspect-square flex-col items-center justify-center gap-3 p-5 text-center">
+        <div className="flex w-full flex-col overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-950 dark:bg-red-950/20">
+            <div className="flex h-52 flex-col items-center justify-center gap-3 p-5 text-center">
                 <div className="text-sm font-medium text-red-600 dark:text-red-300">生成失败</div>
                 <Typography.Paragraph ellipsis={{ rows: 4 }} className="!mb-0 !text-xs !text-red-500 dark:!text-red-300">
                     {error}
@@ -612,6 +644,11 @@ function LogPanel({
     onCreateSession,
     onDeleteSelected,
     onPreviewLog,
+    running,
+    runningActive,
+    runningElapsedMs,
+    runningCount,
+    onSelectRunning,
 }: {
     logs: GenerationLog[];
     selectedLogIds: string[];
@@ -620,6 +657,11 @@ function LogPanel({
     onCreateSession: () => void;
     onDeleteSelected: () => void;
     onPreviewLog: (log: GenerationLog) => void;
+    running: boolean;
+    runningActive: boolean;
+    runningElapsedMs: number;
+    runningCount: number;
+    onSelectRunning: () => void;
 }) {
     const allSelected = Boolean(logs.length) && selectedLogIds.length === logs.length;
     const toggleAll = () => onSelectedLogIdsChange(allSelected ? [] : logs.map((log) => log.id));
@@ -644,6 +686,7 @@ function LogPanel({
                 </Button>
             </div>
             <div className="space-y-3">
+                {running ? <RunningLogCard active={runningActive} elapsedMs={runningElapsedMs} count={runningCount} onClick={onSelectRunning} /> : null}
                 {logs.map((log) => (
                     <LogCard
                         key={log.id}
@@ -654,9 +697,34 @@ function LogPanel({
                         onClick={() => onPreviewLog(log)}
                     />
                 ))}
-                {!logs.length ? <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-stone-300 text-center text-sm text-stone-500 dark:border-stone-700">暂无生成记录</div> : null}
+                {!logs.length && !running ? <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-stone-300 text-center text-sm text-stone-500 dark:border-stone-700">暂无生成记录</div> : null}
             </div>
         </>
+    );
+}
+
+function RunningLogCard({ active, elapsedMs, count, onClick }: { active: boolean; elapsedMs: number; count: number; onClick: () => void }) {
+    return (
+        <button
+            type="button"
+            className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
+            onClick={onClick}
+        >
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                    <ThinkingOrb state="solving" size={20} theme="auto" speed={0.6} />
+                    <span className="truncate text-sm font-semibold leading-5">生成中</span>
+                </div>
+                <div className="grid justify-items-end gap-2">
+                    <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="processing">
+                        {count} 张
+                    </Tag>
+                    <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">
+                        {formatDuration(elapsedMs)}
+                    </Tag>
+                </div>
+            </div>
+        </button>
     );
 }
 
@@ -669,8 +737,8 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
             className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
             onClick={onClick}
         >
-            <div className="grid grid-cols-[minmax(128px,1fr)_auto] gap-2">
-                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-1.5">
                     <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />
                     <div className="min-w-0">
                         <div className="truncate text-sm font-semibold leading-5">{log.title}</div>
@@ -772,6 +840,7 @@ function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
         model: log.config?.model || log.model || "",
         imageModel: log.config?.imageModel || log.model || "",
         quality: log.config?.quality || log.quality || "",
+        resolution: log.config?.resolution || "",
         size: log.config?.size || log.size || "",
         count: log.config?.count || String(log.imageCount || log.successCount || 1),
     };
@@ -820,6 +889,7 @@ function buildLog({
         model: config.model,
         imageModel: config.imageModel,
         quality: config.quality,
+        resolution: config.resolution,
         size: config.size,
         count: config.count,
     };
