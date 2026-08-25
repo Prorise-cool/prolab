@@ -91,7 +91,6 @@ type CanvasGenerationRequest = {
     controller: AbortController;
 };
 
-type CanvasImageSettings = Pick<CanvasNodeMetadata, "model" | "quality" | "size" | "count">;
 
 const VIDEO_NODE_MAX_WIDTH = 420;
 const VIDEO_NODE_MAX_HEIGHT = 420;
@@ -256,6 +255,7 @@ function InfiniteCanvasPage() {
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const updateConfig = useConfigStore((state) => state.updateConfig);
     const addAsset = useAssetStore((state) => state.addAsset);
     const cleanupAssetImages = useAssetStore((state) => state.cleanupImages);
     const hydrated = useCanvasStore((state) => state.hydrated);
@@ -326,7 +326,6 @@ function InfiniteCanvasPage() {
     const agentCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
-    const lastImageSettingsRef = useRef<CanvasImageSettings>({});
 
     const createHistoryEntry = useCallback(
         (): CanvasHistoryEntry => ({
@@ -539,15 +538,16 @@ function InfiniteCanvasPage() {
         const rect = containerRef.current?.getBoundingClientRect();
         return screenToCanvas((rect?.left || 0) + (rect?.width || size.width) / 2, (rect?.top || 0) + (rect?.height || size.height) / 2);
     }, [screenToCanvas, size.height, size.width]);
-    const getLastImageSettings = useCallback(() => {
-        const remembered = lastImageSettingsRef.current;
-        return {
-            model: remembered.model || effectiveConfig.imageModel || effectiveConfig.model,
-            quality: remembered.quality || effectiveConfig.quality,
-            size: remembered.size || effectiveConfig.size,
-            count: remembered.count || getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
-        };
-    }, [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.quality, effectiveConfig.size]);
+    const getLastImageSettings = useCallback(
+        () => ({
+            model: effectiveConfig.imageModel || effectiveConfig.model,
+            quality: effectiveConfig.quality,
+            resolution: effectiveConfig.resolution,
+            size: effectiveConfig.size,
+            count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
+        }),
+        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.quality, effectiveConfig.resolution, effectiveConfig.size],
+    );
 
     const setConnecting = useCallback((next: ConnectionHandle | null) => {
         connectingParamsRef.current = next;
@@ -1606,20 +1606,25 @@ function InfiniteCanvasPage() {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, prompt } } : node)));
     }, []);
 
-    const handleConfigNodeChange = useCallback((nodeId: string, patch: Partial<CanvasNodeData["metadata"]>) => {
-        const target = nodesRef.current.find((node) => node.id === nodeId);
-        const imageMode = target?.type === CanvasNodeType.Image || (target?.type === CanvasNodeType.Config && (target.metadata?.generationMode || "image") === "image");
-        if (imageMode && (patch.model !== undefined || patch.quality !== undefined || patch.size !== undefined || patch.count !== undefined)) {
-            lastImageSettingsRef.current = {
-                ...lastImageSettingsRef.current,
-                ...(patch.model !== undefined ? { model: patch.model } : {}),
-                ...(patch.quality !== undefined ? { quality: patch.quality } : {}),
-                ...(patch.size !== undefined ? { size: patch.size } : {}),
-                ...(patch.count !== undefined ? { count: patch.count } : {}),
-            };
-        }
-        setNodes((prev) => prev.map((node) => (node.id === nodeId ? applyNodeConfigPatch(node, patch) : node)));
-    }, []);
+    const handleConfigNodeChange = useCallback(
+        (nodeId: string, patch: Partial<CanvasNodeData["metadata"]>) => {
+            const target = nodesRef.current.find((node) => node.id === nodeId);
+            const imageMode = target?.type === CanvasNodeType.Image || (target?.type === CanvasNodeType.Config && (target.metadata?.generationMode || "image") === "image");
+            if (imageMode) {
+                if (patch.model !== undefined) updateConfig("imageModel", patch.model);
+                if (patch.quality !== undefined) updateConfig("quality", patch.quality);
+                if (patch.resolution !== undefined) updateConfig("resolution", patch.resolution);
+                if (patch.size !== undefined) updateConfig("size", patch.size);
+                if (patch.count !== undefined) {
+                    const count = String(patch.count);
+                    updateConfig("count", count);
+                    updateConfig("canvasImageCount", count);
+                }
+            }
+            setNodes((prev) => prev.map((node) => (node.id === nodeId ? applyNodeConfigPatch(node, patch) : node)));
+        },
+        [updateConfig],
+    );
 
     const downloadNodeImage = useCallback((node: CanvasNodeData) => {
         if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !node.metadata?.content) return;
@@ -2174,7 +2179,7 @@ function InfiniteCanvasPage() {
                                     ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, { signal: controller.signal }).then((items) => items[0])
                                     : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: controller.signal }).then((items) => items[0]);
                                 const uploaded = await uploadImage(image.dataUrl);
-                                const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
+                                const imageSize = fitNodeSize(uploaded.width, uploaded.height);
                                 setNodes((prev) => {
                                     const root = prev.find((node) => node.id === rootId);
                                     return prev.map((node) => {
@@ -2425,8 +2430,7 @@ function InfiniteCanvasPage() {
 
                 const image = useReferenceImages ? await requestEdit(generationConfig, prompt, retryImages, undefined, { signal: controller.signal }).then((items) => items[0]) : await requestGeneration(generationConfig, prompt, { signal: controller.signal }).then((items) => items[0]);
                 const uploadedImage = await uploadImage(image.dataUrl);
-                const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
-                const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
+                const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height);
                 const generationMetadata = savedImageMetadata?.generationType
                     ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
                     : buildImageGenerationMetadata(useReferenceImages ? "edit" : "generation", generationConfig, 1, retryImages);
