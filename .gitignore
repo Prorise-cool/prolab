@@ -10,3 +10,8 @@ data/
 .idea
 .workflow/
 web/dist
+
+**/dist
+web/public/plugins
+plugins/canvas/*/dist
+plugins/canvas/*/node_modules

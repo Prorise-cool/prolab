@@ -1,4 +1,7 @@
-export const appName = 'ProLab';
+export const appNames = {
+  en: 'ProLab',
+  'zh-CN': 'ProLab',
+};
 export const docsRoute = '/docs';
 export const docsContentRoute = '/llms.mdx/docs';
 

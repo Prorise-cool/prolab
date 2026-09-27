@@ -2,11 +2,13 @@ import { ArrowRight, Clapperboard, ImageIcon, MessageSquareText, Server, Share2,
 import { type ReactNode, useEffect, useState } from "react";
 import { App, Button, Image, Tag } from "antd";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 import { APP_VERSION, DOCS_URL } from "@/constant/env";
 import { navigationTools } from "@/constant/navigation-tools";
+import i18n from "@/i18n";
 import { cn } from "@/lib/utils";
-import { type Prompt } from "@/services/api/prompts";
+import { fetchPrompts, type Prompt } from "@/services/api/prompts";
 import { useConfigStore } from "@/stores/use-config-store";
 
 type HomeFeature = {
@@ -66,6 +68,7 @@ const stats = [
 
 export default function IndexPage() {
     const { message } = App.useApp();
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const [primaryTool] = navigationTools;
@@ -74,6 +77,12 @@ export default function IndexPage() {
     const [previewOpen, setPreviewOpen] = useState(false);
 
     const openConfig = () => openConfigDialog(false);
+
+    useEffect(() => {
+        void fetchPrompts({ pageSize: 12 })
+            .then((data) => setPromptShowcase(data.items))
+            .catch((error) => message.error(error instanceof Error ? error.message : i18n.t("home.promptError")));
+    }, [message]);
 
     return (
         <main className="relative isolate h-full overflow-y-auto bg-background text-foreground">
@@ -106,10 +115,10 @@ export default function IndexPage() {
 
                     <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
                         <Button type="primary" size="large" onClick={() => navigate(`/${primaryTool.slug}`)} icon={<ArrowRight className="size-4" />} iconPlacement="end">
-                            开始使用
+                            {t("home.start")}
                         </Button>
                         <Button size="large" onClick={() => navigate("/canvas")}>
-                            打开画布
+                            {t("home.openCanvas")}
                         </Button>
                     </div>
                 </div>
@@ -118,11 +127,11 @@ export default function IndexPage() {
                     <div className="mb-8 grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-start">
                         <div />
                         <div className="max-w-2xl text-center">
-                            <h2 className="text-3xl font-semibold text-stone-950 dark:text-stone-100">沉淀每一次好结果</h2>
-                            <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">收藏稳定出图的提示词、参考风格和结果图片，让下一次创作从已有经验开始。</p>
+                            <h2 className="text-3xl font-semibold text-stone-950 dark:text-stone-100">{t("home.showcaseTitle")}</h2>
+                            <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">{t("home.showcaseDescription")}</p>
                         </div>
                         <Button type="link" onClick={() => navigate("/prompts")} className="justify-self-center md:justify-self-end" icon={<ArrowRight className="size-4" />} iconPlacement="end">
-                            查看提示词库
+                            {t("home.viewPrompts")}
                         </Button>
                     </div>
                     <div className="grid auto-rows-[210px] gap-4 md:grid-cols-4">
@@ -253,6 +262,20 @@ export default function IndexPage() {
                     </div>
                 </div>
             </footer>
+            <Image.PreviewGroup
+                preview={{
+                    open: previewOpen,
+                    current: previewIndex,
+                    onOpenChange: setPreviewOpen,
+                    onChange: setPreviewIndex,
+                }}
+            >
+                <div className="hidden">
+                    {promptShowcase.map((item) => (
+                        <Image key={item.id} src={item.coverUrl} alt={item.title} />
+                    ))}
+                </div>
+            </Image.PreviewGroup>
         </main>
     );
 }

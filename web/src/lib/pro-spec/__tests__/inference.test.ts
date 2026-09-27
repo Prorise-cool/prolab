@@ -4,7 +4,7 @@ import { buildRequest } from "../provider-adapter";
 import { inferModelInfo } from "../model-inference";
 import { getModelLogoById } from "../model-logo";
 import { fetchProApiTokenUsage, proApiRootUrl, summarizeModelCategories } from "../proapi-usage";
-import { mergeSuggestedModelOptions, modelOptionLabel, modelOptionSearchText, modelOptionsFromChannels, normalizeModelOptionValue, resolveModelRequestConfig, type AiConfig } from "../../../stores/use-config-store";
+import { mergeSuggestedModelOptions, modelOptionLabel, modelOptionSearchText, modelOptionsFromChannels, normalizeChannelModels, normalizeModelOptionValue, resolveModelRequestConfig, type AiConfig } from "../../../stores/use-config-store";
 import { clampImageSize, resolveModelRequestSize } from "../../../services/api/image";
 
 describe("pro-spec inference", () => {
@@ -291,8 +291,8 @@ describe("pro-spec ProAPI usage", () => {
 describe("model channel routing", () => {
     test("keeps same model names selectable across different API keys", () => {
         const channels = [
-            { id: "key-a", name: "ProAPI A", baseUrl: "https://a.example.com", apiKey: "sk-channel-a", apiFormat: "openai" as const, models: ["gpt-4o"] },
-            { id: "key-b", name: "ProAPI B", baseUrl: "https://b.example.com", apiKey: "sk-channel-b", apiFormat: "openai" as const, models: ["gpt-4o"] },
+            { id: "key-a", name: "ProAPI A", baseUrl: "https://a.example.com", apiKey: "sk-channel-a", apiFormat: "openai" as const, models: normalizeChannelModels(["gpt-4o"]) },
+            { id: "key-b", name: "ProAPI B", baseUrl: "https://b.example.com", apiKey: "sk-channel-b", apiFormat: "openai" as const, models: normalizeChannelModels(["gpt-4o"]) },
         ];
         const models = modelOptionsFromChannels(channels);
         const config = { channels, models, model: models[0], imageModel: "", videoModel: "", textModel: models[0], audioModel: "" } as AiConfig;
@@ -317,8 +317,8 @@ describe("model channel routing", () => {
 
     test("normalizes legacy bare models without silently using a stale channel", () => {
         const channels = [
-            { id: "key-a", name: "ProAPI A", baseUrl: "https://a.example.com", apiKey: "sk-channel-a", apiFormat: "openai" as const, models: ["claude-sonnet-4"] },
-            { id: "key-b", name: "ProAPI B", baseUrl: "https://b.example.com", apiKey: "sk-channel-b", apiFormat: "openai" as const, models: ["gpt-4o"] },
+            { id: "key-a", name: "ProAPI A", baseUrl: "https://a.example.com", apiKey: "sk-channel-a", apiFormat: "openai" as const, models: normalizeChannelModels(["claude-sonnet-4"]) },
+            { id: "key-b", name: "ProAPI B", baseUrl: "https://b.example.com", apiKey: "sk-channel-b", apiFormat: "openai" as const, models: normalizeChannelModels(["gpt-4o"]) },
         ];
         const models = modelOptionsFromChannels(channels);
         const config = { channels, models, model: models[1], imageModel: "", videoModel: "", textModel: models[1], audioModel: "" } as AiConfig;

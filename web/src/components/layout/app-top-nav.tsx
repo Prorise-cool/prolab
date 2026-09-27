@@ -1,6 +1,7 @@
-import { Menu } from "lucide-react";
+import { Bot, Menu } from "lucide-react";
 import { Button, Tooltip } from "antd";
 import { Link, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { AppConfigModal } from "@/components/layout/app-config-modal";
@@ -8,17 +9,19 @@ import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
-import { useCanvasAgentStore } from "@/stores/canvas/use-canvas-agent-store";
-import { useConfigStore } from "@/stores/use-config-store";
+import { useAgentStore } from "@/stores/use-agent-store";
 
 export function AppTopNav() {
+    const { t } = useTranslation();
     const { pathname } = useLocation();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const autoConnectRef = useRef(false);
-    const agentToken = useCanvasAgentStore((state) => state.token);
-    const agentEnabled = useCanvasAgentStore((state) => state.enabled);
-    const agentConnected = useCanvasAgentStore((state) => state.connected);
-    const connectAgent = useCanvasAgentStore((state) => state.connectAgent);
+    const agentToken = useAgentStore((state) => state.token);
+    const agentEnabled = useAgentStore((state) => state.enabled);
+    const agentConnected = useAgentStore((state) => state.connected);
+    const connectAgent = useAgentStore((state) => state.connectAgent);
+    const togglePanel = useAgentStore((state) => state.togglePanel);
+    const panelOpen = useAgentStore((state) => state.panelOpen);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
@@ -26,7 +29,7 @@ export function AppTopNav() {
     useEffect(() => {
         if (autoConnectRef.current || agentEnabled || agentConnected || !agentToken.trim()) return;
         autoConnectRef.current = true;
-        connectAgent();
+        connectAgent({ silent: true });
     }, [agentConnected, agentEnabled, agentToken, connectAgent]);
 
     return (
@@ -44,8 +47,8 @@ export function AppTopNav() {
                                 type="button"
                                 className="ml-3 inline-flex size-8 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 md:hidden dark:text-stone-300 dark:hover:text-white"
                                 onClick={() => setMobileNavOpen(true)}
-                                aria-label="打开导航菜单"
-                                title="导航菜单"
+                                aria-label={t("topNav.openMenu")}
+                                title={t("topNav.menu")}
                             >
                                 <Menu className="size-5" />
                             </button>
@@ -66,7 +69,7 @@ export function AppTopNav() {
                                             )}
                                         >
                                             <Icon className="size-4" />
-                                            <span className="truncate">{tool.label}</span>
+                                            <span className="truncate">{t(`navigation.${tool.slug}`)}</span>
                                         </Link>
                                     );
                                 })}
@@ -74,7 +77,9 @@ export function AppTopNav() {
                         </div>
 
                         <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
-                            <CodexStatusButton />
+                            <Tooltip title={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")}>
+                                <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" icon={<Bot className="size-4" />} onClick={togglePanel} aria-label={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")} />
+                            </Tooltip>
                             <UserStatusActions />
                         </div>
                     </div>
@@ -84,23 +89,5 @@ export function AppTopNav() {
             <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} onClose={() => setMobileNavOpen(false)} />
             <AppConfigModal />
         </>
-    );
-}
-
-function CodexStatusButton() {
-    const connected = useCanvasAgentStore((state) => state.connected);
-    const enabled = useCanvasAgentStore((state) => state.enabled);
-    const activity = useCanvasAgentStore((state) => state.activity);
-    const connectError = useCanvasAgentStore((state) => state.connectError);
-    const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
-    const color = connectError ? "#dc2626" : connected ? "#16a34a" : enabled ? "#d97706" : "currentColor";
-    const title = connectError || (connected ? activity || "Codex 已连接" : enabled ? "Codex 连接中" : "Codex 未连接");
-    return (
-        <Tooltip title={title}>
-            <Button type="text" shape="circle" className="relative !h-8 !w-8 !min-w-8" onClick={() => openConfigDialog(false, "codex")} aria-label="Codex 连接状态">
-                <span className="mx-auto block size-4" style={{ background: color, WebkitMask: "url(/icons/openai.svg) center / contain no-repeat", mask: "url(/icons/openai.svg) center / contain no-repeat" }} />
-                <span className="absolute right-1 top-1 size-2 rounded-full border border-background" style={{ background: color }} />
-            </Button>
-        </Tooltip>
     );
 }

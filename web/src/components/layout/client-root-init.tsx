@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { QuickConnectModal } from "@/components/onboarding/quick-connect-modal";
 import { DEFAULT_UPSTREAM } from "@/lib/pro-spec/constants";
+import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 import { useConfigStore } from "@/stores/use-config-store";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
@@ -12,6 +13,8 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const [presetBaseUrl, setPresetBaseUrl] = useState<string>(DEFAULT_UPSTREAM.baseUrl);
     const hydrated = useConfigStore((state) => state.hydrated);
     const config = useConfigStore((state) => state.config);
+
+    usePromptSourceScheduler();
 
     useEffect(() => {
         if (!hydrated) return;

@@ -90,12 +90,12 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         ...(style || {}),
         color: showOverlay ? "transparent" : style?.color,
         caretColor: style?.color || theme.node.text,
+        cursor: "text",
         WebkitTextFillColor: showOverlay ? "transparent" : undefined,
-        position: "relative",
-        zIndex: 1,
-        ...(showOverlay ? { background: "transparent", backgroundColor: "transparent" } : {}),
+        // The highlight layer covers the textarea when showOverlay is active, so keep the textarea above it to preserve the native caret.
+        ...(showOverlay ? { position: "relative", zIndex: 1, background: "transparent", backgroundColor: "transparent" } : {}),
     } as CSSProperties;
-    const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
+    const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} caretIndex={mention.start} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
 
     return (
         <div className={`relative h-full w-full ${containerClassName || ""}`}>
@@ -139,6 +139,18 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     if (isImeComposing(event)) {
                         onKeyDown?.(event);
                         return;
+                    }
+                    if ((event.key === "Backspace" || event.key === "Delete") && !mention) {
+                        const el = textareaRef.current;
+                        if (el && el.selectionStart === el.selectionEnd) {
+                            const result = deleteAdjacentLabel(value, el.selectionStart, event.key === "Backspace" ? "backward" : "forward", activeLabels);
+                            if (result) {
+                                event.preventDefault();
+                                updateValue(result.value, result.caret);
+                                requestAnimationFrame(updateSelectionState);
+                                return;
+                            }
+                        }
                     }
                     if (mention && candidates.length) {
                         if (event.key === "ArrowDown") {
@@ -203,16 +215,24 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
     );
 }
 
-function MentionMenu({ textarea, references, activeIndex, theme, onSelect }: { textarea: HTMLTextAreaElement; references: CanvasResourceReference[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (reference: CanvasResourceReference) => void }) {
+function MentionMenu({ textarea, caretIndex, references, activeIndex, theme, onSelect }: { textarea: HTMLTextAreaElement; caretIndex: number; references: CanvasResourceReference[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (reference: CanvasResourceReference) => void }) {
     const selectedRef = useRef(false);
     const rect = textarea.getBoundingClientRect();
     const boundary = textarea.closest(".ant-modal-content")?.getBoundingClientRect() || { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
     const menuWidth = 256;
     const maxMenuHeight = 224;
     const gap = 6;
-    const left = clamp(rect.left, boundary.left + 8, boundary.right - menuWidth - 8);
-    const showAbove = rect.bottom + gap + maxMenuHeight > boundary.bottom && rect.top - gap - maxMenuHeight >= boundary.top;
-    const top = clamp(showAbove ? rect.top - gap - maxMenuHeight : rect.bottom + gap, boundary.top + 8, boundary.bottom - maxMenuHeight - 8);
+    // Anchor the menu to the pixel position of the @ caret instead of the textarea edge.
+    // The canvas may be scaled: rect uses scaled coordinates while mirror measurements use layout coordinates, so apply the scale.
+    const scale = textarea.offsetWidth ? rect.width / textarea.offsetWidth : 1;
+    const computed = window.getComputedStyle(textarea);
+    const lineHeight = (parseFloat(computed.lineHeight) || parseFloat(computed.fontSize) * 1.4 || 20) * scale;
+    const caret = getCaretPoint(textarea, caretIndex);
+    const caretLeft = rect.left + (caret.left - textarea.scrollLeft) * scale;
+    const caretTop = rect.top + (caret.top - textarea.scrollTop) * scale;
+    const left = clamp(caretLeft, boundary.left + 8, boundary.right - menuWidth - 8);
+    const showAbove = caretTop + lineHeight + gap + maxMenuHeight > boundary.bottom && caretTop - gap - maxMenuHeight >= boundary.top;
+    const top = clamp(showAbove ? caretTop - gap - maxMenuHeight : caretTop + lineHeight + gap, boundary.top + 8, boundary.bottom - maxMenuHeight - 8);
 
     const stopCanvasInteraction = (event: PointerEvent | MouseEvent) => {
         event.stopPropagation();
@@ -277,6 +297,58 @@ function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);
 }
 
+// Mirror the textarea layout in a div to measure the caret at index in unscaled layout coordinates.
+const MIRROR_STYLE_PROPS = ["boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "fontStyle", "fontVariant", "fontWeight", "fontStretch", "fontSize", "lineHeight", "fontFamily", "textAlign", "textIndent", "letterSpacing", "wordSpacing", "tabSize", "textTransform"] as const;
+
+function getCaretPoint(textarea: HTMLTextAreaElement, index: number) {
+    const computed = window.getComputedStyle(textarea);
+    const mirror = document.createElement("div");
+    const style = mirror.style;
+    style.position = "absolute";
+    style.top = "0";
+    style.left = "-9999px";
+    style.visibility = "hidden";
+    style.whiteSpace = "pre-wrap";
+    style.overflowWrap = "break-word";
+    for (const prop of MIRROR_STYLE_PROPS) style[prop] = computed[prop];
+    mirror.textContent = textarea.value.slice(0, index);
+    const marker = document.createElement("span");
+    marker.textContent = textarea.value.slice(index) || ".";
+    mirror.appendChild(marker);
+    document.body.appendChild(mirror);
+    const point = { left: marker.offsetLeft, top: marker.offsetTop };
+    document.body.removeChild(mirror);
+    return point;
+}
+
 function escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// A plain textarea cannot represent atomic tokens, so delete a complete reference label at once.
+// Labels must be ordered by descending length so longer labels match first.
+function deleteAdjacentLabel(value: string, caret: number, direction: "backward" | "forward", labels: string[]): { value: string; caret: number } | null {
+    if (direction === "backward") {
+        const before = value.slice(0, caret);
+        for (const label of labels) {
+            if (!label) continue;
+            const match = new RegExp(`(^|\\s)(${escapeRegExp(label)})\\s*$`).exec(before);
+            if (match) {
+                const start = match.index + match[1].length; // Label start; preserve the preceding separator space.
+                return { value: value.slice(0, start) + value.slice(caret), caret: start };
+            }
+        }
+    } else {
+        // Forward deletion requires the caret to follow a line boundary or whitespace to avoid cutting into other text.
+        if (caret > 0 && !/\s/.test(value[caret - 1])) return null;
+        const after = value.slice(caret);
+        for (const label of labels) {
+            if (!label) continue;
+            const match = new RegExp(`^(\\s*)(${escapeRegExp(label)})(?=\\s|$)`).exec(after);
+            if (match) {
+                return { value: value.slice(0, caret) + value.slice(caret + match[0].length), caret };
+            }
+        }
+    }
+    return null;
 }

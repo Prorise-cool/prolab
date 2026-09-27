@@ -8,6 +8,7 @@ import {
   MarkdownCopyButton,
   ViewOptionsPopover,
 } from 'fumadocs-ui/layouts/docs/page';
+import { localizePath } from './i18n';
 
 export type DocPageData = (typeof source)['$inferPage'];
 
@@ -16,7 +17,12 @@ export function DocPageContent({ page }: { page: DocPageData }) {
   const markdownUrl = getPageMarkdownUrl(page).url;
 
   return (
-    <DocsPage toc={page.data.toc} full={page.data.full} className="md:pt-20 xl:pt-24">
+    <DocsPage
+      toc={page.data.toc}
+      full={page.data.full}
+      tableOfContent={{ style: 'clerk' }}
+      className="md:pt-20 xl:pt-24"
+    >
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
       <div className="flex flex-row gap-2 items-center border-b pb-6">
@@ -38,8 +44,16 @@ export function DocPageContent({ page }: { page: DocPageData }) {
 }
 
 export function getDocPageMetadata(page: DocPageData): Metadata {
+  const path = `/docs/${page.slugs.join('/')}`;
+
   return {
     title: page.data.title,
     description: page.data.description,
+    alternates: {
+      languages: {
+        en: localizePath('en', path),
+        'zh-CN': localizePath('zh-CN', path),
+      },
+    },
   };
 }

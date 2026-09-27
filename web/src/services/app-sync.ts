@@ -1,18 +1,19 @@
 import localforage from "localforage";
 
+import i18n from "@/i18n";
 import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";
 import { getImageBlob, resolveImageUrl, setImageBlob } from "@/services/image-storage";
 import { downloadWebdavFile, uploadWebdavFile, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { WebdavSyncConfig } from "@/stores/use-config-store";
-import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
+import type { CanvasDeletedProject, CanvasProject } from "@/stores/canvas/use-canvas-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 type StoredLog = Record<string, unknown> & { id?: string };
 export type AppSyncDomainKey = "canvas" | "assets" | "image-workbench" | "video-workbench";
 type DomainKey = AppSyncDomainKey;
-type CanvasDomainData = { projects: CanvasProject[] };
+type CanvasDomainData = { projects: CanvasProject[]; deleted: CanvasDeletedProject[] };
 type AssetDomainData = { assets: Asset[] };
 type LogDomainData = { logs: StoredLog[] };
 
@@ -88,14 +89,17 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
         syncDomain<CanvasDomainData>(config, onProgress, {
             key: "canvas",
             label: "画布",
-            emptyData: { projects: [] },
-            localData: async () => ({ projects: useCanvasStore.getState().projects }),
-            mergeData: (local, remote) => ({ projects: mergeById(local.projects, remote.projects, "updatedAt") }),
-            applyData: async (data) => useCanvasStore.getState().replaceProjects(data.projects),
+            emptyData: { projects: [], deleted: [] },
+            localData: async () => {
+                const { projects, deletedProjects } = useCanvasStore.getState();
+                return { projects, deleted: deletedProjects };
+            },
+            mergeData: mergeCanvasData,
+            applyData: async (data) => useCanvasStore.getState().replaceProjects(data.projects, data.deleted),
         }),
         syncDomain<AssetDomainData>(config, onProgress, {
             key: "assets",
-            label: "我的素材",
+            label: "我的资产",
             emptyData: { assets: [] },
             localData: async () => ({ assets: useAssetStore.getState().assets }),
             mergeData: (local, remote) => ({ assets: mergeById(local.assets, remote.assets, "updatedAt") }),
@@ -167,7 +171,7 @@ async function syncDomain<T>(config: WebdavSyncConfig, onProgress: AppSyncProgre
             uploadedBytes: uploaded.uploadedBytes,
         };
     } catch (error) {
-        emitProgress(onProgress, { domain: options.key, label: options.label, stage: error instanceof Error ? error.message : "同步失败", status: "exception" });
+        emitProgress(onProgress, { domain: options.key, label: options.label, stage: error instanceof Error ? error.message : i18n.t("config.webdav.errors.syncFailed"), status: "exception" });
         throw error;
     }
 }
@@ -176,7 +180,7 @@ async function readDomainManifest<T>(config: WebdavSyncConfig, domain: DomainKey
     const file = await downloadWebdavFile(config, domainPath(domain, WEBDAV_MANIFEST_FILE_NAME));
     if (!file) return null;
     const data = JSON.parse(await file.text()) as DomainManifest<T>;
-    if (data.app !== "prolab" || data.domain !== domain) throw new Error(`${domain} 同步清单不是当前应用的数据`);
+    if (data.app !== "prolab" || data.domain !== domain) throw new Error(i18n.t("config.webdav.errors.invalidManifest", { domain }));
     return {
         app: "prolab",
         version: 1,
@@ -291,6 +295,32 @@ async function replaceStoredLogs(store: LogStore, logs: StoredLog[]) {
     });
 }
 
+function mergeCanvasData(local: CanvasDomainData, remote: CanvasDomainData): CanvasDomainData {
+    const localDeleted = local.deleted || [];
+    const remoteDeleted = remote.deleted || [];
+    const deletedAtById = new Map<string, string>();
+    for (const item of [...remoteDeleted, ...localDeleted]) {
+        if (!item.id || !item.deletedAt) continue;
+        const current = deletedAtById.get(item.id);
+        if (!current || item.deletedAt >= current) deletedAtById.set(item.id, item.deletedAt);
+    }
+
+    const projects = mergeById(local.projects || [], remote.projects || [], "updatedAt").filter((project) => {
+        const deletedAt = deletedAtById.get(project.id);
+        if (!deletedAt) return true;
+        if (getTime(project as Record<string, unknown>, "updatedAt") > Date.parse(deletedAt)) {
+            deletedAtById.delete(project.id);
+            return true;
+        }
+        return false;
+    });
+
+    return {
+        projects,
+        deleted: [...deletedAtById.entries()].map(([id, deletedAt]) => ({ id, deletedAt })),
+    };
+}
+
 function mergeById<T extends { id?: string }>(local: T[], remote: T[], timeKey: string) {
     const items = new Map<string, T>();
     remote.forEach((item) => {
@@ -323,7 +353,7 @@ function domainPath(domain: DomainKey, path: string) {
 
 function domainLabel(domain: DomainKey) {
     if (domain === "canvas") return "画布";
-    if (domain === "assets") return "我的素材";
+    if (domain === "assets") return "我的资产";
     if (domain === "image-workbench") return "生图工作台";
     return "视频创作台";
 }

@@ -31,6 +31,22 @@ Please include:
 
 ## Scope
 
+### Canvas node plugins
+
+The canvas supports third-party node plugins loaded from a remote URL. By
+design, an installed plugin's code runs directly inside the web app with full
+access to the page, including locally stored data such as AI API keys. This is
+an intentional trade-off for extensibility, and the installer shows a warning
+before installing. Therefore:
+
+- Only install plugins from sources you trust.
+- Reports that a *malicious plugin* can access page data or API keys are **out
+  of scope** — that is the documented behavior of the trust model.
+- Reports **in scope** include: the app loading/executing plugin code without
+  the install confirmation, a plugin escaping its declared node type to break
+  core app integrity in ways not implied by "runs in the page", or the plugin
+  source cache being writable by an unrelated origin.
+
 Examples of in-scope reports:
 
 - Cross-site scripting or token exfiltration in the web app.

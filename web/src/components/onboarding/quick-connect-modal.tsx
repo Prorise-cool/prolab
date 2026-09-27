@@ -9,7 +9,7 @@ import { inferModelInfo } from "@/lib/pro-spec/model-inference";
 import { getModelLogoById } from "@/lib/pro-spec/model-logo";
 import { fetchProApiTokenUsage, formatUsageAmount, summarizeModelCategories, type ProApiTokenUsage } from "@/lib/pro-spec/proapi-usage";
 import { fetchChannelModels } from "@/services/api/image";
-import { configWithQuickConnectChannel, createModelChannel, useConfigStore, type AiConfig } from "@/stores/use-config-store";
+import { configWithQuickConnectChannel, createModelChannel, normalizeChannelModels, type AiConfig, useConfigStore } from "@/stores/use-config-store";
 
 type QuickConnectModalProps = {
     open: boolean;
@@ -120,7 +120,7 @@ export function QuickConnectModal({ open, initialApiKey = "", initialBaseUrl = d
             baseUrl: normalizeBaseUrl(baseUrl || defaultBaseUrl),
             apiKey: apiKey.trim(),
             apiFormat: "openai",
-            models: selected,
+            models: normalizeChannelModels(selected),
         });
         saveConfig(configWithQuickConnectChannel(config, channel));
         message.success("ProAPI 一键接入已完成");
