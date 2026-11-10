@@ -127,7 +127,11 @@ export function buildDalleEndpointBody(opts: BuildBodyOpts): Record<string, any>
     prompt,
     n: p.sampleCount && p.sampleCount > 1 ? p.sampleCount : 1,
   }
-  if (family !== 'agnes-image') body.response_format = responseFormat
+  // gpt-image 系列按 OpenAI 官方口径不接受 `response_format`：带上会被上游直接 400
+  // `Unknown parameter: 'response_format'`（实测 modelverse / OpenAI 兼容端点）。
+  // 官方固定回 b64_json，parseImageResponse 已同时兼容 b64_json 与 url，故无需该参数。
+  // agnes-image 同理（LiteLLM 上游不支持）。
+  if (family !== 'agnes-image' && family !== 'gpt-image') body.response_format = responseFormat
 
   switch (family) {
     case 'dalle': {

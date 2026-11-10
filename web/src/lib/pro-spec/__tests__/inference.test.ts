@@ -166,6 +166,42 @@ describe("pro-spec provider adapter", () => {
         }
     });
 
+    test("omits response_format for GPT Image edits and generations", () => {
+        const edit = buildRequest({
+            operation: "edit",
+            modelId: "gpt-image-2",
+            prompt: "neon sign",
+            imageFiles: [new File(["image"], "reference.png", { type: "image/png" })],
+            modelParams: { size: "1024x1024", quality: "low" },
+            baseUrl: "https://newapi.prorisehub.com",
+            apiKey: "sk-test",
+        });
+        const form = edit.init.body as FormData;
+        // OpenAI 官方 gpt-image 端点不接受 response_format，带上会被上游 400 unknown_parameter
+        expect(form.has("response_format")).toBe(false);
+        expect(form.get("model")).toBe("gpt-image-2");
+
+        const generation = buildRequest({
+            modelId: "gpt-image-2",
+            prompt: "neon sign",
+            modelParams: { size: "1024x1024" },
+            baseUrl: "https://newapi.prorisehub.com",
+            apiKey: "sk-test",
+        });
+        const body = JSON.parse(String(generation.init.body)) as Record<string, unknown>;
+        expect(body.response_format).toBe(undefined);
+
+        // dall-e 仍然需要该参数，别把这条链路一起改坏了
+        const dalle = buildRequest({
+            modelId: "dall-e-3",
+            prompt: "neon sign",
+            baseUrl: "https://newapi.prorisehub.com",
+            apiKey: "sk-test",
+        });
+        const dalleBody = JSON.parse(String(dalle.init.body)) as Record<string, unknown>;
+        expect(dalleBody.response_format).toBe("b64_json");
+    });
+
     test("uses image[] array field when editing with multiple reference images", () => {
         const request = buildRequest({
             operation: "edit",
